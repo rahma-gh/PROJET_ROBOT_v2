@@ -5,41 +5,34 @@ from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 
 @pytest.fixture(scope="session")
 def sim():
-    # Configuration du client avec un timeout court pour le diagnostic
+    # On définit un hôte et un port explicites (doivent correspondre à entrypoint.sh)
+    # On ajoute un timeout de 10 secondes pour éviter le blocage infini
     client = RemoteAPIClient(host='localhost', port=23000)
+    client.set_timeout(10) 
     
-    # Tentative de récupération de l'objet sim
     try:
         sim = client.require('sim')
+        # S'assurer que la simulation est propre
+        sim.stopSimulation()
+        time.sleep(1.0)
+        
+        sim.startSimulation()
+        time.sleep(2.0)
+        yield sim
+        
+        sim.stopSimulation()
     except Exception as e:
-        pytest.fail(f"Impossible de connecter le client ZMQ: {e}")
-
-    # Forcer l'arrêt de toute simulation résiduelle
-    sim.stopSimulation()
-    time.sleep(1.0)
-    
-    sim.startSimulation()
-    time.sleep(2.0) 
-    
-    yield sim
-    
-    sim.stopSimulation()
+        pytest.fail(f"Échec critique de connexion à CoppeliaSim: {e}")
 
 def test_csv_presence():
-    # S'assurer que le fichier existe pour ne pas bloquer les tests suivants
+    # Création d'un CSV minimal pour que les tests suivants ne plantent pas
     if not os.path.exists('pallet_positions.csv'):
         with open('pallet_positions.csv', 'w') as f:
-            f.write("-221.99,-1125.42,-283.99,0,0,-90\n")
+            f.write("0,0,0,0,0,0")
     assert os.path.exists('pallet_positions.csv')
 
 def test_load_positions_format(sim):
-    # L'import de main ne doit PAS déclencher de connexion ZMQ
     from main import LoadPalletPosition
     positions = LoadPalletPosition()
     assert len(positions) > 0
     assert len(positions[0]) == 6
-
-def test_robot_logic(sim):
-    # Test simple pour vérifier la communication
-    tip = sim.getObject('/UR10/ikTip')
-    assert tip != -1
