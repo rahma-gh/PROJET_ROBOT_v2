@@ -3,6 +3,9 @@ import pytest
 import time
 from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 
+# NE PAS importer UniversalRobot ici — son __init__ ouvre un client ZMQ
+# ce qui corrompt l'état REQ/REP du serveur
+
 
 @pytest.fixture(scope="session")
 def sim():
