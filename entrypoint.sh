@@ -37,40 +37,16 @@ if [ $ELAPSED -ge $TIMEOUT ]; then
     exit 1
 fi
 
-echo "=== coppeliasim.log complet ==="
-cat coppeliasim.log
-echo "================================"
+# Vérifier que CoppeliaSim est toujours vivant
+sleep 2
+if ! kill -0 $COPPELIA_PID 2>/dev/null; then
+    echo "ERROR: CoppeliaSim crashed after startup!"
+    cat coppeliasim.log
+    exit 1
+fi
 
 echo "ZMQ server ready. Waiting for scene to settle..."
-sleep 5
-
-echo "=== coppeliasim.log apres sleep ==="
-cat coppeliasim.log
-echo "===================================="
-
-echo "=== Test connexion ZMQ manuelle ==="
-python3 - << 'PYEOF'
-import zmq, time
-ctx = zmq.Context()
-sock = ctx.socket(zmq.REQ)
-sock.setsockopt(zmq.RCVTIMEO, 5000)
-sock.setsockopt(zmq.SNDTIMEO, 5000)
-sock.connect("tcp://localhost:23000")
-print("Socket connected")
-try:
-    import msgpack
-    # Envoyer un ping minimal
-    msg = msgpack.packb({'func': 'zmqRemoteApi.info', 'args': []})
-    sock.send(msg)
-    print("Message sent, waiting reply...")
-    reply = sock.recv()
-    print(f"Reply received: {len(reply)} bytes")
-except Exception as e:
-    print(f"ERROR: {e}")
-finally:
-    sock.close()
-    ctx.term()
-PYEOF
+sleep 3
 
 echo "=== Running pytest ==="
 export PYTHONPATH=/app
@@ -90,5 +66,4 @@ timeout 8s wait $COPPELIA_PID 2>/dev/null || true
 kill -0 $COPPELIA_PID 2>/dev/null && kill -KILL $COPPELIA_PID 2>/dev/null || true
 
 echo "=== Done (exit code: $TEST_EXIT_CODE) ==="
-cat coppeliasim.log
 exit $TEST_EXIT_CODE
