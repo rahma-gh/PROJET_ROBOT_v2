@@ -5,16 +5,20 @@ sys.path.append(os.getcwd())
 from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 import math
 import time
-from lib.interpolation import linear_interpolation
-from lib.homogeneous_transform import *
 import numpy as np
 
-
 class UniversalRobot:
-    def __init__(self, robot_name):
-        client = RemoteAPIClient()
-        self.sim = client.require('sim')
-        self.simIK = client.require('simIK')
+    def __init__(self, robot_name, sim=None):
+        # Utilise l'instance sim fournie ou en crée une nouvelle si nécessaire
+        if sim:
+            self.sim = sim
+            # On récupère le client lié à cette instance sim pour charger simIK
+            self.simIK = self.sim.require('simIK')
+        else:
+            client = RemoteAPIClient()
+            self.sim = client.require('sim')
+            self.simIK = client.require('simIK')
+            
         self.robotName = robot_name
 
         self.simRobot  = self.sim.getObject(f'/{robot_name}')
@@ -112,7 +116,6 @@ class UniversalRobot:
 
     def AttachGripper(self, gripper_name):
         self.gripper = Gripper(self.sim, f'/{self.robotName}/{gripper_name}')
-
 
 class Gripper:
     def __init__(self, sim, gripper_script_name):
