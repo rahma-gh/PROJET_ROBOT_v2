@@ -1,31 +1,21 @@
 import sys
 import os
-sys.path.append(os.getcwd())
-
 from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 import math
-import time
-import numpy as np
 
 class UniversalRobot:
     def __init__(self, robot_name, sim=None):
-        """
-        Initialise le robot UR.
-        :param robot_name: Nom du robot dans la scène (ex: 'UR10')
-        :param sim: Instance sim existante (optionnel, évite les deadlocks ZMQ en CI)
-        """
+        # Si sim est fourni (par pytest), on l'utilise. 
+        # Sinon on crée une nouvelle connexion (pour main.py)
         if sim is not None:
-            # Utilisation de l'instance injectée (pour les tests Pytest)
             self.sim = sim
         else:
-            # Création d'un nouveau client (pour usage local dans main.py)
             self.client = RemoteAPIClient()
             self.sim = self.client.require('sim')
             
         self.simIK = self.sim.require('simIK')
         self.robotName = robot_name
 
-        # Récupération des poignées (handles)
         self.simRobot  = self.sim.getObject(f'/{robot_name}')
         self.simTip    = self.sim.getObject(f'/{robot_name}/ikTip')
         self.simTarget = self.sim.getObject(f'/{robot_name}/ikTarget')
@@ -34,65 +24,18 @@ class UniversalRobot:
         for i in range(6):
             self.simJoints.append(self.sim.getObject(f'/{robot_name}/joint{i + 1}'))
 
-        # Configuration IK (Cinématique Inverse)
         self.ikEnv   = self.simIK.createEnvironment()
         self.ikGroup = self.simIK.createGroup(self.ikEnv)
-        self.simIK.addElementFromScene(
-            self.ikEnv, self.ikGroup,
-            self.simRobot, self.simTip, self.simTarget,
-            self.simIK.constraint_pose
-        )
-
-        self.ikMaxVel  = 0.2
-        self.ikMaxAccel = 0.1
-        self.ikMaxJerk  = 0.1
-        self.jointVel   = [180 * math.pi / 180] * 6
-        self.jointAccel = [40 * math.pi / 180] * 6
-        self.jointJerk  = [80 * math.pi / 180] * 6
-        self.gripper = None
+        self.simIK.addElementFromScene(self.ikEnv, self.ikGroup, self.simRobot, 
+                                       self.simTip, self.simTarget, self.simIK.constraint_pose)
 
     def ReadPosition(self):
         pos = self.sim.getObjectPosition(self.simTip, self.simRobot)
         ori = self.sim.getObjectOrientation(self.simTip, self.simRobot)
         return [p * 1000 for p in pos] + [o * 180 / math.pi for o in ori]
 
-    def ReadJointPosition(self):
-        return [self.sim.getJointPosition(j) * 180 / math.pi for j in self.simJoints]
-
-    def SetSpeed(self, speed):
-        self.ikMaxVel   = [speed / 1000] * 3 + [360 * math.pi / 180]
-        self.ikMaxAccel = [speed * 2 / 1000] * 3 + [720 * math.pi / 180]
-        self.ikMaxJerk  = [speed * 2 / 1000] * 3 + [720 * math.pi / 180]
-
-    def ikCallback(self, target_pose, a, b):
-        self.sim.setObjectPose(self.simTarget, -1, target_pose)
-        self.simIK.applyIkEnvironmentToScene(self.ikEnv, self.ikGroup)
-
-    def MoveL(self, targetPos, speed):
-        self.SetSpeed(speed)
-        pos = [targetPos[i] / 1000 for i in range(3)]
-        ori = [targetPos[i + 3] * math.pi / 180 for i in range(3)]
-        self.sim.setObjectPosition(self.simTarget, self.simRobot, pos)
-        self.sim.setObjectOrientation(self.simTarget, self.simRobot, ori)
-        
-        target_quaternion = self.sim.getObjectPose(self.simTarget, -1)
-        current_quaternion = self.sim.getObjectPose(self.simTip, -1)
-        self.sim.moveToPose(-1, current_quaternion, self.ikMaxVel, self.ikMaxAccel, 
-                           self.ikMaxJerk, target_quaternion, self.ikCallback, None, None)
-
-    def MoveJ(self, targetJointPos, speed):
-        self.jointVel = [speed * math.pi / 180] * 6
-        _targetJointPos = [j * math.pi / 180 for j in targetJointPos]
-        param = {
-            'joints': self.simJoints,
-            'targetPos': _targetJointPos,
-            'maxVel': self.jointVel,
-            'maxAccel': self.jointAccel,
-            'maxJerk': self.jointJerk,
-        }
-        self.sim.moveToConfig(param)
-
     def AttachGripper(self, gripper_name):
+        from lib.ArmRobot import Gripper # Import local pour éviter les cycles
         self.gripper = Gripper(self.sim, f'/{self.robotName}/{gripper_name}')
 
 class Gripper:

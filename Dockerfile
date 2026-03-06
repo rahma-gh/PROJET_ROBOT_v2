@@ -23,7 +23,7 @@ RUN git clone https://github.com/CoppeliaRobotics/lua.git /tmp/coppelia_lua \
     && rm -rf /tmp/coppelia_lua
 
 ENV COPPELIASIM_ROOT=/opt/coppelia
-ENV LD_LIBRARY_PATH=/opt/coppelia:${LD_LIBRARY_PATH}
+ENV LD_LIBRARY_PATH=/opt/coppelia
 ENV QT_QPA_PLATFORM=offscreen
 
 WORKDIR /app
