@@ -77,4 +77,5 @@ CMD ["python3", "-m", "pytest", "tests/", \
      "--html=report.html", \
      "--self-contained-html", \
      "--timeout=180", \
+     "-s", \
      "-vv"]
