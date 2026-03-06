@@ -10,24 +10,24 @@ import numpy as np
 class UniversalRobot:
     def __init__(self, robot_name, sim=None):
         """
-        Initialise le robot UR.
-        :param robot_name: Nom du robot dans la scène (ex: 'UR10')
-        :param sim: Instance sim existante (optionnel, pour éviter les deadlocks ZMQ)
+        Initialise le robot. 
+        :param robot_name: Nom du robot dans CoppeliaSim (ex: 'UR10')
+        :param sim: Instance de sim déjà existante (optionnel, crucial pour les tests)
         """
         if sim is not None:
-            # Utilisation de l'instance injectée (essentiel pour les tests)
+            # Utilisation de l'instance passée (évite de recréer un socket ZMQ)
             self.sim = sim
-            # On récupère simIK via l'instance sim existante
+            # On récupère le module IK via l'instance existante
             self.simIK = self.sim.require('simIK')
         else:
-            # Création d'un nouveau client (usage local standard)
+            # Création d'un nouveau client (usage standard hors tests)
             self.client = RemoteAPIClient()
             self.sim = self.client.require('sim')
             self.simIK = self.client.require('simIK')
             
         self.robotName = robot_name
 
-        # Récupération des handles des objets
+        # Récupération des poignées (handles) des objets
         self.simRobot  = self.sim.getObject(f'/{robot_name}')
         self.simTip    = self.sim.getObject(f'/{robot_name}/ikTip')
         self.simTarget = self.sim.getObject(f'/{robot_name}/ikTarget')
@@ -36,7 +36,7 @@ class UniversalRobot:
         for i in range(6):
             self.simJoints.append(self.sim.getObject(f'/{robot_name}/joint{i + 1}'))
 
-        # Configuration de l'environnement Inverse Kinematics (IK)
+        # Configuration de l'environnement de Cinématique Inverse (IK)
         self.ikEnv   = self.simIK.createEnvironment()
         self.ikGroup = self.simIK.createGroup(self.ikEnv)
         self.simIK.addElementFromScene(
@@ -60,7 +60,7 @@ class UniversalRobot:
         handle = self.sim.getObject(f'/{objectName}')
         pos = self.sim.getObjectPosition(handle, self.simRobot)
         ori = self.sim.getObjectOrientation(handle, self.simRobot)
-        # Conversion en mm et degrés
+        # Conversion en mm et degrés pour la lisibilité
         pos = [p * 1000 for p in pos]
         ori = [o * 180 / math.pi for o in ori]
         return pos + ori
@@ -83,7 +83,7 @@ class UniversalRobot:
         return [self.sim.getJointPosition(j) * 180 / math.pi for j in self.simJoints]
 
     def SetSpeed(self, speed):
-        # speed en mm/s pour le linéaire
+        # speed est passé en mm/s
         self.ikMaxVel   = [speed / 1000] * 3 + [360 * math.pi / 180]
         self.ikMaxAccel = [speed * 2 / 1000] * 3 + [720 * math.pi / 180]
         self.ikMaxJerk  = [speed * 2 / 1000] * 3 + [720 * math.pi / 180]
@@ -93,7 +93,7 @@ class UniversalRobot:
         self.simIK.applyIkEnvironmentToScene(self.ikEnv, self.ikGroup)
 
     def MoveL(self, targetPos, speed):
-        """Mouvement linéaire (Cartésien)"""
+        """Mouvement linéaire cartésien"""
         self.SetSpeed(speed)
         pos = [targetPos[i] / 1000 for i in range(3)]
         ori = [targetPos[i + 3] * math.pi / 180 for i in range(3)]
@@ -118,7 +118,7 @@ class UniversalRobot:
             self.sim.setJointTargetPosition(self.simJoints[i], target_joint_pos[i])
 
     def MoveJ(self, targetJointPos, speed):
-        """Mouvement articulaire (Joint)"""
+        """Mouvement articulaire (Joint to Joint)"""
         self.SetJointSpeed(speed)
         _targetJointPos = [j * math.pi / 180 for j in targetJointPos]
         param = {
@@ -136,7 +136,7 @@ class UniversalRobot:
 class Gripper:
     def __init__(self, sim, gripper_script_name):
         self.sim = sim
-        # Recherche du script attaché au gripper
+        # Recherche du script Lua attaché à la ventouse dans CoppeliaSim
         self.gripper_script = self.sim.getScript(
             self.sim.scripttype_childscript, gripper_script_name
         )
