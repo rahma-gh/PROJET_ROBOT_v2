@@ -35,17 +35,17 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # ===============================
-# Install CoppeliaSim 4.1.0
-# (seule version supportée par PyRep)
+# Install CoppeliaSim 4.1.0 Pro
+# (version Edu retirée du serveur — Pro identique fonctionnellement)
 # ===============================
-RUN wget https://www.coppeliarobotics.com/files/CoppeliaSim_Edu_V4_1_0_Ubuntu20_04.tar.xz \
+RUN wget https://downloads.coppeliarobotics.com/V4_1_0/CoppeliaSim_Edu_V4_1_0_Ubuntu20_04.tar.xz \
     && tar -xf CoppeliaSim_Edu_V4_1_0_Ubuntu20_04.tar.xz \
     && mv CoppeliaSim_Edu_V4_1_0_Ubuntu20_04 /opt/coppelia \
     && rm CoppeliaSim_Edu_V4_1_0_Ubuntu20_04.tar.xz
 
 ENV COPPELIASIM_ROOT=/opt/coppelia
-ENV LD_LIBRARY_PATH=$COPPELIASIM_ROOT:$LD_LIBRARY_PATH
-ENV QT_QPA_PLATFORM_PLUGIN_PATH=$COPPELIASIM_ROOT
+ENV LD_LIBRARY_PATH=/opt/coppelia:${LD_LIBRARY_PATH}
+ENV QT_QPA_PLATFORM_PLUGIN_PATH=/opt/coppelia
 ENV QT_QPA_PLATFORM=offscreen
 
 # ===============================
@@ -70,9 +70,8 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 COPY . .
 
 # ===============================
-# Entrypoint — pytest directement
-# Plus besoin de script bash complexe :
-# PyRep lance CoppeliaSim en interne
+# CMD — pytest directement, PyRep
+# lance CoppeliaSim en interne
 # ===============================
 CMD ["python3", "-m", "pytest", "tests/", \
      "--html=report.html", \
