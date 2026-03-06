@@ -1,21 +1,22 @@
 import sys
 import os
-from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 import math
+from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 
 class UniversalRobot:
     def __init__(self, robot_name, sim=None):
-        # Si sim est fourni (par pytest), on l'utilise. 
-        # Sinon on crée une nouvelle connexion (pour main.py)
+        # Si sim est fourni (par pytest), on l'utilise.
         if sim is not None:
             self.sim = sim
         else:
-            self.client = RemoteAPIClient()
+            # Sinon on crée une nouvelle connexion
+            self.client = RemoteAPIClient(host='localhost', port=23000)
             self.sim = self.client.require('sim')
             
         self.simIK = self.sim.require('simIK')
         self.robotName = robot_name
 
+        # Handles
         self.simRobot  = self.sim.getObject(f'/{robot_name}')
         self.simTip    = self.sim.getObject(f'/{robot_name}/ikTip')
         self.simTarget = self.sim.getObject(f'/{robot_name}/ikTarget')
@@ -24,6 +25,7 @@ class UniversalRobot:
         for i in range(6):
             self.simJoints.append(self.sim.getObject(f'/{robot_name}/joint{i + 1}'))
 
+        # Configuration IK
         self.ikEnv   = self.simIK.createEnvironment()
         self.ikGroup = self.simIK.createGroup(self.ikEnv)
         self.simIK.addElementFromScene(self.ikEnv, self.ikGroup, self.simRobot, 
@@ -34,8 +36,13 @@ class UniversalRobot:
         ori = self.sim.getObjectOrientation(self.simTip, self.simRobot)
         return [p * 1000 for p in pos] + [o * 180 / math.pi for o in ori]
 
+    def MoveL(self, targetPos, speed):
+        # Logique simplifiée pour le test
+        pos = [targetPos[i] / 1000 for i in range(3)]
+        self.sim.setObjectPosition(self.simTarget, self.simRobot, pos)
+        self.simIK.applyIkEnvironmentToScene(self.ikEnv, self.ikGroup)
+
     def AttachGripper(self, gripper_name):
-        from lib.ArmRobot import Gripper # Import local pour éviter les cycles
         self.gripper = Gripper(self.sim, f'/{self.robotName}/{gripper_name}')
 
 class Gripper:
