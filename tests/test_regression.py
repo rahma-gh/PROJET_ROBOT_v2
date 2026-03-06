@@ -1,5 +1,4 @@
 import os
-import ctypes
 import pytest
 from pyrep import PyRep
 from pyrep.backend import sim as sim_backend
@@ -36,28 +35,30 @@ def test_scene_is_loaded(pr):
     print(f"\nsimGetSimulationState() = {sim_state}")
     assert sim_state == 17, f"Simulation non démarrée (state={sim_state})"
 
-    # Lister tous les objets avec simGetObjectsInTree — signature correcte
-    count_ptr = ctypes.c_int(0)
+    # PyRep utilise cffi — les pointeurs se créent avec ffi
+    from pyrep.backend.sim import ffi
+
+    count_ptr = ffi.new('int *', 0)
     handles_ptr = sim_backend.lib.simGetObjectsInTree(
-        -1,         # sim_handle_scene
-        -1,         # sim_object_type_all
-        0,          # options
-        ctypes.byref(count_ptr)
+        -1,       # sim_handle_scene = toute la scène
+        -1,       # tous types d'objets
+        0,        # options
+        count_ptr
     )
-    count = count_ptr.value
+    count = count_ptr[0]
     print(f"Nombre d'objets dans la scène : {count}")
 
-    if handles_ptr and count > 0:
-        print("\n=== Tous les objets de la scène ===")
+    if count > 0 and handles_ptr != ffi.NULL:
+        print("\n=== Objets dans la scène ===")
         for i in range(count):
             handle = handles_ptr[i]
             name_ptr = sim_backend.lib.simGetObjectName(handle)
-            if name_ptr:
-                name = ctypes.cast(name_ptr, ctypes.c_char_p).value.decode('utf-8')
+            if name_ptr != ffi.NULL:
+                name = ffi.string(name_ptr).decode('utf-8')
                 print(f"  handle={handle:4d}  name='{name}'")
-        print("===================================\n")
+        print("============================\n")
 
-    assert count > 0, f"Scène vide — 0 objets trouvés"
+    assert count > 0, f"Scène vide — 0 objets trouvés (fichier .ttt incompatible avec CoppeliaSim 4.1 ?)"
 
 
 def test_robot_and_scene(pr):
