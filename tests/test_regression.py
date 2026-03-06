@@ -2,7 +2,6 @@ import os
 import pytest
 import time
 from coppeliasim_zmqremoteapi_client import RemoteAPIClient
-from lib.ArmRobot import UniversalRobot
 
 
 @pytest.fixture(scope="session")
@@ -28,9 +27,9 @@ def test_load_positions_format(sim):
 
 
 def test_robot_and_scene(sim):
-    tip = sim.getObject('/UR10/ikTip')
+    tip  = sim.getObject('/UR10/ikTip')
     base = sim.getObject('/UR10')
-    pos = sim.getObjectPosition(tip, base)
+    pos  = sim.getObjectPosition(tip, base)
     assert len(pos) == 3
 
 

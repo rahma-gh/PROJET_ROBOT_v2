@@ -1,108 +1,128 @@
+import sys
+import os
+sys.path.append(os.getcwd())
+
+from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 import math
 import time
-import numpy as np
-
-from pyrep import PyRep
-from pyrep.robots.arms.arm import Arm
-from pyrep.robots.end_effectors.suction_cup import SuctionCup
-from pyrep.objects.object import Object
-from pyrep.objects.joint import Joint
 from lib.interpolation import linear_interpolation
 from lib.homogeneous_transform import *
+import numpy as np
 
 
-# UR10 — hérite de la classe Arm de PyRep
-class UR10Arm(Arm):
-    def __init__(self, count: int = 0):
-        super().__init__(count, 'UR10', num_joints=6)
-
-
-# Classe principale du robot
 class UniversalRobot:
-    def __init__(self, robot_name: str, pr: PyRep):
-        """
-        robot_name : nom du robot dans la scène CoppeliaSim (ex: 'UR10')
-        pr         : instance PyRep déjà lancée (pr.launch + pr.start)
-        """
-        self.pr = pr
-        self.robot_name = robot_name
-        self.arm = UR10Arm()
+    def __init__(self, robot_name):
+        client = RemoteAPIClient()
+        self.sim = client.require('sim')
+        self.simIK = client.require('simIK')
+        self.robotName = robot_name
+
+        self.simRobot  = self.sim.getObject(f'/{robot_name}')
+        self.simTip    = self.sim.getObject(f'/{robot_name}/ikTip')
+        self.simTarget = self.sim.getObject(f'/{robot_name}/ikTarget')
+
+        self.simJoints = []
+        for i in range(6):
+            self.simJoints.append(self.sim.getObject(f'/{robot_name}/joint{i + 1}'))
+
+        self.ikEnv   = self.simIK.createEnvironment()
+        self.ikGroup = self.simIK.createGroup(self.ikEnv)
+        self.simIK.addElementFromScene(
+            self.ikEnv, self.ikGroup,
+            self.simRobot, self.simTip, self.simTarget,
+            self.simIK.constraint_pose
+        )
+
+        self.ikMaxVel  = 0.2
+        self.ikMaxAccel = 0.1
+        self.ikMaxJerk  = 0.1
+
+        self.jointVel   = [180] * 6
+        self.jointAccel = [40  * math.pi / 180] * 6
+        self.jointJerk  = [80  * math.pi / 180] * 6
+
         self.gripper = None
 
-    # Lire la position cartésienne du tip (mm + degrés)
+    def GetObjectPosition(self, objectName):
+        handle = self.sim.getObject(f'/{objectName}')
+        pos = self.sim.getObjectPosition(handle, self.simRobot)
+        ori = self.sim.getObjectOrientation(handle, self.simRobot)
+        pos = [p * 1000 for p in pos]
+        ori = [o * 180 / math.pi for o in ori]
+        return pos + ori
+
+    def GetObjectPosition2(self, objectHandle):
+        pos = self.sim.getObjectPosition(objectHandle, self.simRobot)
+        ori = self.sim.getObjectOrientation(objectHandle, self.simRobot)
+        pos = [p * 1000 for p in pos]
+        ori = [o * 180 / math.pi for o in ori]
+        return pos + ori
+
     def ReadPosition(self):
-        tip = self.arm.get_tip()
-        pos = tip.get_position()                    # mètres
-        ori = tip.get_orientation()                 # radians
-        pos_mm  = [p * 1000 for p in pos]
-        ori_deg = [o * 180 / math.pi for o in ori]
-        return pos_mm + ori_deg
+        pos = self.sim.getObjectPosition(self.simTip, self.simRobot)
+        ori = self.sim.getObjectOrientation(self.simTip, self.simRobot)
+        pos = [p * 1000 for p in pos]
+        ori = [o * 180 / math.pi for o in ori]
+        return pos + ori
 
-    # Lire la position des joints (degrés)
     def ReadJointPosition(self):
-        joints_rad = self.arm.get_joint_positions()
-        return [j * 180 / math.pi for j in joints_rad]
+        return [self.sim.getJointPosition(j) * 180 / math.pi for j in self.simJoints]
 
-    # Obtenir la position d'un objet de la scène par son nom
-    def GetObjectPosition(self, object_name: str):
-        obj = Object.get_object(object_name)
-        robot_base = Object.get_object(self.robot_name)
-        pos = obj.get_position(relative_to=robot_base)
-        ori = obj.get_orientation(relative_to=robot_base)
-        pos_mm  = [p * 1000 for p in pos]
-        ori_deg = [o * 180 / math.pi for o in ori]
-        return pos_mm + ori_deg
+    def SetSpeed(self, speed):
+        self.ikMaxVel   = [speed / 1000] * 3 + [360 * math.pi / 180]
+        self.ikMaxAccel = [speed * 2 / 1000] * 3 + [720 * math.pi / 180]
+        self.ikMaxJerk  = [speed * 2 / 1000] * 3 + [720 * math.pi / 180]
 
-    def GetObjectPosition2(self, object_handle):
-        obj = Object(object_handle)
-        robot_base = Object.get_object(self.robot_name)
-        pos = obj.get_position(relative_to=robot_base)
-        ori = obj.get_orientation(relative_to=robot_base)
-        pos_mm  = [p * 1000 for p in pos]
-        ori_deg = [o * 180 / math.pi for o in ori]
-        return pos_mm + ori_deg
+    def ikCallback(self, target_quaternion, a, b):
+        self.sim.setObjectPose(self.simTarget, -1, target_quaternion)
+        self.simIK.applyIkEnvironmentToScene(self.ikEnv, self.ikGroup)
 
-    # Déplacer le robot en mode linéaire (mm, degrés)
-    def MoveL(self, target_pos, speed):
-        current_pos = self.ReadPosition()
-        interpolated_points, steps, time_per_step = linear_interpolation(
-            current_pos, target_pos, speed, speed / 15
+    def MoveL(self, targetPos, speed):
+        self.SetSpeed(speed)
+        pos = [targetPos[i] / 1000 for i in range(3)]
+        ori = [targetPos[i + 3] * 3.14 / 180 for i in range(3)]
+        self.sim.setObjectPosition(self.simTarget, self.simRobot, pos)
+        self.sim.setObjectOrientation(self.simTarget, self.simRobot, ori)
+        target_quaternion  = self.sim.getObjectPose(self.simTarget, -1)
+        current_quaternion = self.sim.getObjectPose(self.simTip, -1)
+        self.sim.moveToPose(
+            -1, current_quaternion,
+            self.ikMaxVel, self.ikMaxAccel, self.ikMaxJerk,
+            target_quaternion, self.ikCallback, None, None
         )
-        for point in interpolated_points:
-            pos_m = [point[i] / 1000 for i in range(3)]
-            ori_r = [point[i + 3] * math.pi / 180 for i in range(3)]
-            tip = self.arm.get_tip()
-            tip.set_position(pos_m)
-            tip.set_orientation(ori_r)
-            self.arm.solve_ik_via_jacobian(pos_m, ori_r)
-            self.pr.step()
-            t = max(time_per_step, 0.05)
-            time.sleep(t)
 
-    # Déplacer le robot en mode joint (degrés)
-    def MoveJ(self, target_joint_pos, speed):
-        target_rad = [j * math.pi / 180 for j in target_joint_pos]
-        self.arm.set_joint_target_positions(target_rad)
-        # Attendre que le mouvement se termine
-        steps = int(abs(speed) / 10) + 10
-        for _ in range(steps):
-            self.pr.step()
+    def SetJointSpeed(self, speed):
+        self.jointVel = [speed * math.pi / 180] * 6
 
-    # Attacher le gripper
-    def AttachGripper(self, gripper_name: str):
-        self.gripper = VacuumGripper(gripper_name, self.pr)
+    def fkCallback(self, target_joint_pos, a, b, c):
+        for i in range(6):
+            self.sim.setJointTargetPosition(self.simJoints[i], target_joint_pos[i])
+
+    def MoveJ(self, targetJointPos, speed):
+        self.SetJointSpeed(speed)
+        _targetJointPos = [j * math.pi / 180 for j in targetJointPos]
+        param = {
+            'joints':   self.simJoints,
+            'targetPos': _targetJointPos,
+            'maxVel':   self.jointVel,
+            'maxAccel': self.jointAccel,
+            'maxJerk':  self.jointJerk,
+        }
+        self.sim.moveToConfig(param)
+
+    def AttachGripper(self, gripper_name):
+        self.gripper = Gripper(self.sim, f'/{self.robotName}/{gripper_name}')
 
 
-# Gripper de type ventouse
-class VacuumGripper:
-    def __init__(self, gripper_name: str, pr: PyRep):
-        self.pr = pr
-        self.suction = SuctionCup(gripper_name)
+class Gripper:
+    def __init__(self, sim, gripper_script_name):
+        self.sim = sim
+        self.gripper_script = self.sim.getScript(
+            self.sim.scripttype_childscript, gripper_script_name
+        )
 
     def Catch(self):
-        self.suction.grasp(None)   # active la ventouse
-        self.pr.step()
+        self.sim.callScriptFunction('set_gripper', self.gripper_script, True)
 
     def Release(self):
-        self.suction.release()
-        self.pr.step()
+        self.sim.callScriptFunction('set_gripper', self.gripper_script, False)
