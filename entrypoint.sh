@@ -8,7 +8,6 @@ chmod 0700 "$XDG_RUNTIME_DIR"
 
 echo "=== Starting CoppeliaSim (headless) ==="
 
-# SANS -q : ce flag ferme CoppeliaSim immédiatement après le chargement
 xvfb-run --auto-servernum --server-args='-screen 0 1024x768x24' \
   /opt/coppelia/coppeliaSim \
     -h \
@@ -33,13 +32,45 @@ done
 
 if [ $ELAPSED -ge $TIMEOUT ]; then
     echo "ERROR: ZMQ server not ready after ${TIMEOUT}s"
-    tail -n 40 coppeliasim.log
+    cat coppeliasim.log
     kill -TERM $COPPELIA_PID 2>/dev/null || true
     exit 1
 fi
 
+echo "=== coppeliasim.log complet ==="
+cat coppeliasim.log
+echo "================================"
+
 echo "ZMQ server ready. Waiting for scene to settle..."
-sleep 3
+sleep 5
+
+echo "=== coppeliasim.log apres sleep ==="
+cat coppeliasim.log
+echo "===================================="
+
+echo "=== Test connexion ZMQ manuelle ==="
+python3 - << 'PYEOF'
+import zmq, time
+ctx = zmq.Context()
+sock = ctx.socket(zmq.REQ)
+sock.setsockopt(zmq.RCVTIMEO, 5000)
+sock.setsockopt(zmq.SNDTIMEO, 5000)
+sock.connect("tcp://localhost:23000")
+print("Socket connected")
+try:
+    import msgpack
+    # Envoyer un ping minimal
+    msg = msgpack.packb({'func': 'zmqRemoteApi.info', 'args': []})
+    sock.send(msg)
+    print("Message sent, waiting reply...")
+    reply = sock.recv()
+    print(f"Reply received: {len(reply)} bytes")
+except Exception as e:
+    print(f"ERROR: {e}")
+finally:
+    sock.close()
+    ctx.term()
+PYEOF
 
 echo "=== Running pytest ==="
 export PYTHONPATH=/app
@@ -47,7 +78,7 @@ export PYTHONPATH=/app
 pytest tests/ \
     --html=report.html \
     --self-contained-html \
-    --timeout=180 \
+    --timeout=60 \
     --timeout-method=thread \
     -vv
 
@@ -59,5 +90,5 @@ timeout 8s wait $COPPELIA_PID 2>/dev/null || true
 kill -0 $COPPELIA_PID 2>/dev/null && kill -KILL $COPPELIA_PID 2>/dev/null || true
 
 echo "=== Done (exit code: $TEST_EXIT_CODE) ==="
-tail -n 20 coppeliasim.log
+cat coppeliasim.log
 exit $TEST_EXIT_CODE
