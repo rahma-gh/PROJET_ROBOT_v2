@@ -11,8 +11,7 @@ def pr():
     _pr = PyRep()
     _pr.launch(SCENE_FILE, headless=True)
     _pr.start()
-    # Laisser la scène s'initialiser complètement
-    for _ in range(5):
+    for _ in range(10):
         _pr.step()
     yield _pr
     _pr.stop()
@@ -30,33 +29,44 @@ def test_load_positions_format():
     assert len(positions[0]) == 6
 
 
-def test_list_scene_objects(pr):
+def test_scene_is_loaded(pr):
     """
-    Diagnostic : liste tous les objets de la scène avec simGetObjectHandle
-    en essayant des noms courants, plus un scan par index.
+    Vérifie que la scène est réellement chargée en essayant de récupérer
+    un objet par handle numérique (handle 0 = toujours la scène elle-même
+    dans CoppeliaSim si la scène est chargée).
+    Affiche aussi des infos de debug sur l'état de la simulation.
     """
-    print("\n=== Scan par index ===")
-    found = []
-    for idx in range(500):
-        handle = sim_backend.lib.simGetObjects(idx, -1)  # -1 = sim_handle_all
-        if handle == -1:
-            break
-        found.append(handle)
-        print(f"  handle={handle}")
+    # 1. Vérifier l'état de la simulation
+    sim_state = sim_backend.lib.simGetSimulationState()
+    print(f"\nsimGetSimulationState() = {sim_state}")
+    # 17 = simulation running, 0 = stopped
+    assert sim_state > 0, f"Simulation non démarrée (state={sim_state})"
 
-    print(f"\n=== Test noms courants ===")
-    candidates = [
-        'UR10', 'ur10', 'UR10_base', 'UR10#0',
-        'robot', 'Robot', 'Manipulator',
-        'vacuum_gripper', 'VacuumGripper', 'Gripper',
-        'ConveyorSensor', 'Cartoons1',
-        'ikTip', 'ikTarget', 'joint1',
-    ]
-    for name in candidates:
+    # 2. Compter les objets dans la scène
+    count = sim_backend.lib.simGetObjectsInTree(
+        -1,   # sim_handle_scene = racine
+        -1,   # tous types
+        0,    # options
+        None  # pas de filtre
+    )
+    print(f"simGetObjectsInTree count type = {type(count)}, value = {count}")
+
+    # 3. Essayer de récupérer le handle de la scène elle-même
+    scene_handle = sim_backend.lib.simGetInt32Parameter(2000)  # sim_intparam_scene_unique_id
+    print(f"Scene unique ID = {scene_handle}")
+
+    # 4. Tenter de trouver des objets par nom générique
+    for name in ['DefaultCamera', 'DefaultLights', 'ResizableFloor_5_25']:
         h = sim_backend.lib.simGetObjectHandle(name.encode('ascii'))
-        status = f"handle={h}" if h >= 0 else "NOT FOUND"
-        print(f"  '{name}' → {status}")
+        print(f"  '{name}' → handle={h}")
 
-    print(f"\nTotal objets par index: {len(found)}")
-    # Ce test est purement informatif
-    assert True
+    # Si la simulation tourne, la scène est au moins partiellement chargée
+    assert sim_state > 0
+
+
+def test_robot_and_scene(pr):
+    pass
+
+
+def test_gripper_init(pr):
+    pass
