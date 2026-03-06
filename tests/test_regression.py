@@ -1,4 +1,5 @@
 import os
+import ctypes
 import pytest
 from pyrep import PyRep
 from pyrep.backend import sim as sim_backend
@@ -19,7 +20,7 @@ def pr():
 
 
 def test_csv_presence():
-    assert os.path.exists('pallet_positions.csv'), "Fichier CSV manquant !"
+    assert os.path.exists('pallet_positions.csv')
 
 
 def test_load_positions_format():
@@ -30,38 +31,33 @@ def test_load_positions_format():
 
 
 def test_scene_is_loaded(pr):
-    """
-    Vérifie que la scène est réellement chargée en essayant de récupérer
-    un objet par handle numérique (handle 0 = toujours la scène elle-même
-    dans CoppeliaSim si la scène est chargée).
-    Affiche aussi des infos de debug sur l'état de la simulation.
-    """
-    # 1. Vérifier l'état de la simulation
+    # Simulation running (17 = running)
     sim_state = sim_backend.lib.simGetSimulationState()
     print(f"\nsimGetSimulationState() = {sim_state}")
-    # 17 = simulation running, 0 = stopped
-    assert sim_state > 0, f"Simulation non démarrée (state={sim_state})"
+    assert sim_state == 17, f"Simulation non démarrée (state={sim_state})"
 
-    # 2. Compter les objets dans la scène
-    count = sim_backend.lib.simGetObjectsInTree(
-        -1,   # sim_handle_scene = racine
-        -1,   # tous types
-        0,    # options
-        None  # pas de filtre
+    # Lister tous les objets avec simGetObjectsInTree — signature correcte
+    count_ptr = ctypes.c_int(0)
+    handles_ptr = sim_backend.lib.simGetObjectsInTree(
+        -1,         # sim_handle_scene
+        -1,         # sim_object_type_all
+        0,          # options
+        ctypes.byref(count_ptr)
     )
-    print(f"simGetObjectsInTree count type = {type(count)}, value = {count}")
+    count = count_ptr.value
+    print(f"Nombre d'objets dans la scène : {count}")
 
-    # 3. Essayer de récupérer le handle de la scène elle-même
-    scene_handle = sim_backend.lib.simGetInt32Parameter(2000)  # sim_intparam_scene_unique_id
-    print(f"Scene unique ID = {scene_handle}")
+    if handles_ptr and count > 0:
+        print("\n=== Tous les objets de la scène ===")
+        for i in range(count):
+            handle = handles_ptr[i]
+            name_ptr = sim_backend.lib.simGetObjectName(handle)
+            if name_ptr:
+                name = ctypes.cast(name_ptr, ctypes.c_char_p).value.decode('utf-8')
+                print(f"  handle={handle:4d}  name='{name}'")
+        print("===================================\n")
 
-    # 4. Tenter de trouver des objets par nom générique
-    for name in ['DefaultCamera', 'DefaultLights', 'ResizableFloor_5_25']:
-        h = sim_backend.lib.simGetObjectHandle(name.encode('ascii'))
-        print(f"  '{name}' → handle={h}")
-
-    # Si la simulation tourne, la scène est au moins partiellement chargée
-    assert sim_state > 0
+    assert count > 0, f"Scène vide — 0 objets trouvés"
 
 
 def test_robot_and_scene(pr):
