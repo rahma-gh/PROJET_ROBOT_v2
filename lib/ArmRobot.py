@@ -5,20 +5,20 @@ sys.path.append(os.getcwd())
 from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 import math
 import time
-import numpy as np
 
 class UniversalRobot:
     def __init__(self, robot_name, sim=None):
-        # Injection de dépendance : on réutilise sim si fourni
-        if sim:
+        # Utilisation impérative de l'instance passée pour éviter de recréer un socket
+        if sim is not None:
             self.sim = sim
-            self.simIK = self.sim.require('simIK')
         else:
+            # Fallback uniquement pour usage local hors tests
             self.client = RemoteAPIClient()
             self.sim = self.client.require('sim')
-            self.simIK = self.client.require('simIK')
             
+        self.simIK = self.sim.require('simIK')
         self.robotName = robot_name
+
         self.simRobot  = self.sim.getObject(f'/{robot_name}')
         self.simTip    = self.sim.getObject(f'/{robot_name}/ikTip')
         self.simTarget = self.sim.getObject(f'/{robot_name}/ikTarget')
@@ -34,7 +34,7 @@ class UniversalRobot:
             self.simRobot, self.simTip, self.simTarget,
             self.simIK.constraint_pose
         )
-
+        
         self.ikMaxVel  = 0.2
         self.ikMaxAccel = 0.1
         self.ikMaxJerk  = 0.1
@@ -42,8 +42,6 @@ class UniversalRobot:
         self.jointAccel = [40 * math.pi / 180] * 6
         self.jointJerk  = [80 * math.pi / 180] * 6
         self.gripper = None
-
-    # ... (gardez le reste de vos méthodes MoveL, MoveJ, etc. inchangé)
 
     def AttachGripper(self, gripper_name):
         self.gripper = Gripper(self.sim, f'/{self.robotName}/{gripper_name}')
