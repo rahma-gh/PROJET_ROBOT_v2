@@ -38,6 +38,5 @@ pytest tests/test_regression.py \
     -vv
 
 TEST_EXIT_CODE=$?
-
 kill -TERM $COPPELIA_PID 2>/dev/null || true
 exit $TEST_EXIT_CODE
