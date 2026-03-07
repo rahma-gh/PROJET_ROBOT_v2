@@ -29,7 +29,7 @@ done
 echo "ZMQ server detected. Waiting 5s for scene loading..."
 sleep 5
 
-echo "=== Running pytest ==="
+echo "== Running pytest =="
 export PYTHONPATH=/app
 pytest tests/test_regression.py \
     --html=report.html \
